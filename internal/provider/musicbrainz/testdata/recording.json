@@ -1,0 +1,45 @@
+{
+ "id": "05cf5b1f-6103-4410-922a-ef41bab995d2",
+ "title": "One More Time",
+ "artist-credit": [
+  {
+   "name": "Daft Punk",
+   "joinphrase": ""
+  }
+ ],
+ "releases": [
+  {
+   "id": "6b94230e-938a-4e4d-9e4e-c0d9d00365c8",
+   "title": "Glowsticks of Steel",
+   "status": "Official",
+   "date": "",
+   "artist-credit": [
+    {
+     "name": "Various Artists",
+     "joinphrase": ""
+    }
+   ],
+   "release-group": {
+    "primary-type": "Album",
+    "secondary-types": [
+     "Compilation",
+     "DJ-mix"
+    ]
+   },
+   "media": [
+    {
+     "position": 1,
+     "track-count": 28,
+     "track-offset": 6,
+     "tracks": [
+      {
+       "number": "7",
+       "position": 7,
+       "title": "One More Time"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
