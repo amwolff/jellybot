@@ -41,8 +41,20 @@ type config struct {
 	layout      jellyfin.Layout
 }
 
+// named prefixes the parse errors of a flag with its name. clingy does not, so
+// a bad JELLYBOT_* value would otherwise not tell which variable is wrong.
+func named[T any](name string, parse func(string) (T, error)) func(string) (T, error) {
+	return func(s string) (T, error) {
+		v, err := parse(s)
+		if err != nil {
+			err = fmt.Errorf("--%s: %w", name, err)
+		}
+		return v, err
+	}
+}
+
 func boolFlag(params clingy.Parameters, name, desc string, opts ...clingy.Option) bool {
-	opts = append(opts, clingy.Transform(strconv.ParseBool), clingy.Boolean)
+	opts = append(opts, clingy.Transform(named(name, strconv.ParseBool)), clingy.Boolean)
 	return params.Flag(name, desc, false, opts...).(bool)
 }
 
@@ -50,16 +62,16 @@ func (c *config) setup(params clingy.Parameters) {
 	c.move = boolFlag(params, "move", "start in move mode instead of copy mode")
 	c.recursive = boolFlag(params, "recursive", "scan the subdirectories of the source", clingy.Short('r'))
 	c.modes = params.Flag("chmod", "octal mode overrides, for example D0700,F0600", nil,
-		clingy.Transform(fsop.ParseModes)).(fsop.Modes)
+		clingy.Type("modes"), clingy.Transform(fsop.ParseModes)).(fsop.Modes)
 	c.owner = params.Flag("chown", "owner override as numeric UID:GID, for example 1000:1000", nil,
-		clingy.Transform(fsop.ParseOwner)).(fsop.Owner)
+		clingy.Type("uid:gid"), clingy.Transform(fsop.ParseOwner)).(fsop.Owner)
 	c.jobs = params.Flag("jobs", "number of files to identify at the same time", 4,
-		clingy.Transform(strconv.Atoi)).(int)
+		clingy.Transform(named("jobs", strconv.Atoi))).(int)
 	c.db = params.Flag("db", "path of the jellybot database", store.DefaultPath()).(string)
 	c.logFile = params.Flag("log-file", "write the log of the TUI to this file", "").(string)
-	c.tmdbKey = params.Flag("tmdb-api-key", "TMDB API key or API read access token", "", clingy.Advanced).(string)
-	c.osKey = params.Flag("opensubtitles-api-key", "OpenSubtitles API key", "", clingy.Advanced).(string)
-	c.acoustidKey = params.Flag("acoustid-api-key", "AcoustID application API key", "", clingy.Advanced).(string)
+	c.tmdbKey = params.Flag("tmdb-api-key", "TMDB API key or API read access token (needed for videos)", "").(string)
+	c.osKey = params.Flag("opensubtitles-api-key", "OpenSubtitles API key", "").(string)
+	c.acoustidKey = params.Flag("acoustid-api-key", "AcoustID application API key", "").(string)
 	c.layout.Movies = params.Flag("movies-dir", "movie library directory under the destination", jellyfin.DefaultLayout.Movies, clingy.Advanced).(string)
 	c.layout.Shows = params.Flag("shows-dir", "show library directory under the destination", jellyfin.DefaultLayout.Shows, clingy.Advanced).(string)
 	c.layout.Music = params.Flag("music-dir", "music library directory under the destination", jellyfin.DefaultLayout.Music, clingy.Advanced).(string)
