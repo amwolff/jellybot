@@ -44,6 +44,9 @@ const (
 	StatusPresent
 	// StatusConflict means that the apply step must not touch the row.
 	StatusConflict
+	// StatusNoName means that the identity gives no valid destination name,
+	// for example because the name is too long.
+	StatusNoName
 )
 
 // Sidecar is a sidecar file of a row.
@@ -77,7 +80,7 @@ type Row struct {
 	// Dest is relative to the destination root, or empty.
 	Dest   string
 	Status Status
-	// Note explains StatusConflict and invalid destinations.
+	// Note explains StatusConflict and StatusNoName.
 	Note string
 
 	// Outcome of the apply step.
@@ -141,6 +144,8 @@ func (r *Row) Text() string {
 		return "= already in library: " + r.Dest
 	case StatusConflict:
 		return "⚠ conflict: " + r.Note
+	case StatusNoName:
+		return "✗ cannot rename: " + r.Note
 	}
 	if r.Unidentified {
 		return "→ " + r.Dest
@@ -285,9 +290,13 @@ func (p *Plan) Recompute() {
 		r.Dest, r.Status, r.Note = "", StatusNone, ""
 		switch id := r.Identity(); {
 		case id != nil:
-			dest, err := p.Layout.Path(*id, filepath.Ext(r.Rel))
+			var suffixes []string
+			for _, sc := range r.Sidecars {
+				suffixes = append(suffixes, sc.Suffix)
+			}
+			dest, err := p.Layout.Path(*id, filepath.Ext(r.Rel), suffixes...)
 			if err != nil {
-				r.Status, r.Note = StatusConflict, err.Error()
+				r.Status, r.Note = StatusNoName, err.Error()
 				continue
 			}
 			r.Dest = dest

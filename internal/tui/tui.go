@@ -554,7 +554,7 @@ func (m *Model) rowText(r *engine.Row, lw, rw int) (string, string) {
 		return styleSkipped.Render(left), styleSkipped.Render(right)
 	case r.Applied && r.ApplyErr == nil:
 		return styleFaint.Render(left), styleGood.Render(right)
-	case r.ApplyErr != nil, r.State == engine.StateFailed:
+	case r.ApplyErr != nil, r.State == engine.StateFailed, r.Status == engine.StatusNoName:
 		return left, styleBad.Render(right)
 	case r.Busy():
 		return left, styleFaint.Render(right)

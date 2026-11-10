@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/amwolff/jellybot/internal/ident"
 )
@@ -152,27 +151,39 @@ func TestPathErrors(t *testing.T) {
 	}
 }
 
-func TestPathLongTitle(t *testing.T) {
-	title := strings.Repeat("é", 300) // 600 bytes
-	got, err := DefaultLayout.Path(ident.Identity{Kind: ident.KindMovie, Title: title, Year: 2000, TMDBID: 123456}, ".mkv")
+func TestPathTooLong(t *testing.T) {
+	long := strings.Repeat("é", 150) // 300 bytes
+	// "Show - S01E02 - " and 235 bytes make a file name of exactly 255 bytes
+	// with ".mkv".
+	full := ident.Identity{Kind: ident.KindEpisode, Title: "Show", TMDBID: 1, Season: 1, Episode: 2, EpisodeTitle: strings.Repeat("x", 235)}
+
+	got, err := DefaultLayout.Path(full, ".mkv", ".srt")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Path of a 255-byte name: %v", err)
 	}
-	for _, part := range strings.Split(got, string(filepath.Separator)) {
-		if len(part) > 255 {
-			t.Fatalf("component has %d bytes", len(part))
+	if n := len(filepath.Base(got)); n != MaxName {
+		t.Fatalf("file name has %d bytes, want %d", n, MaxName)
+	}
+	if got, err := DefaultLayout.Path(full, ".webm"); err == nil {
+		t.Fatalf("Path of a 256-byte name = %q, want an error", got)
+	}
+
+	tests := []struct {
+		name     string
+		id       ident.Identity
+		sidecars []string
+	}{
+		{"movie title", ident.Identity{Kind: ident.KindMovie, Title: long, Year: 2000, TMDBID: 1}, nil},
+		{"series title", ident.Identity{Kind: ident.KindEpisode, Title: long, TMDBID: 1, Season: 1, Episode: 2}, nil},
+		{"episode title", ident.Identity{Kind: ident.KindEpisode, Title: "Show", TMDBID: 1, Season: 1, Episode: 2, EpisodeTitle: long}, nil},
+		{"artist", ident.Identity{Kind: ident.KindTrack, Artist: long, Album: "B", TrackTitle: "C"}, nil},
+		{"track title", ident.Identity{Kind: ident.KindTrack, Artist: "A", Album: "B", TrackTitle: long, Track: 1}, nil},
+		{"sidecar", full, []string{".srt", ".en.srt"}},
+	}
+	for _, tt := range tests {
+		if got, err := DefaultLayout.Path(tt.id, ".mkv", tt.sidecars...); err == nil {
+			t.Errorf("%s: Path = %q, want an error", tt.name, got)
 		}
-		if !utf8.ValidString(part) {
-			t.Fatalf("component %q is not valid UTF-8", part)
-		}
-	}
-	dir, file := filepath.Split(got)
-	folder := filepath.Base(dir)
-	if !strings.HasSuffix(folder, "[tmdbid-123456]") {
-		t.Fatalf("folder %q lost its ID", folder)
-	}
-	if file != folder+".mkv" {
-		t.Fatalf("file %q does not start with the folder name %q", file, folder)
 	}
 }
 

@@ -104,6 +104,15 @@ func newPlan(t *testing.T, src, dst string, rows ...Row) *Plan {
 	return p
 }
 
+func TestPlanNoName(t *testing.T) {
+	p := newPlan(t, t.TempDir(), t.TempDir(), Row{Rel: "long.mkv", Size: 10})
+	p.Handle(Identified{Gen: 1, Rel: "long.mkv", Result: ident.Result{Identity: movie(strings.Repeat("x", 300), 2000, 1)}})
+	r := p.Row("long.mkv")
+	if r.Status != StatusNoName || r.Included() || !strings.HasPrefix(r.Text(), "✗ cannot rename: ") {
+		t.Fatalf("row = %v %q", r.Status, r.Text())
+	}
+}
+
 func TestPlanDestinations(t *testing.T) {
 	src, dst := t.TempDir(), t.TempDir()
 	p := newPlan(t, src, dst,

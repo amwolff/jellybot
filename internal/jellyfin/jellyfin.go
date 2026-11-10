@@ -8,15 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/amwolff/jellybot/internal/ident"
 )
 
-// maxBase is the byte limit for a name before its suffix. Filesystems
-// permit 255 bytes per component; the rest leaves room for long sidecar
-// suffixes such as ".English Commentary.en.forced.srt".
-const maxBase = 200
+// MaxName is the byte limit of one path component on common filesystems
+// (ext4, XFS, Btrfs, and ZFS without the longname property).
+const MaxName = 255
 
 // Layout holds the library subdirectories under the destination root.
 type Layout struct {
@@ -46,17 +44,21 @@ func (l Layout) Validate() error {
 }
 
 // Path returns the destination path of a file with identity id and
-// extension ext, relative to the destination root.
-func (l Layout) Path(id ident.Identity, ext string) (string, error) {
+// extension ext, relative to the destination root. Each sidecar of the file
+// keeps the same name with its own suffix. Path returns an error if a folder
+// name, the file name, or a sidecar name is longer than MaxName bytes.
+func (l Layout) Path(id ident.Identity, ext string, sidecars ...string) (string, error) {
 	ext = strings.ToLower(ext)
 
+	var dirs []string // the folders under the library directory
+	var lib, name string
 	switch id.Kind {
 	case ident.KindMovie:
 		base, err := videoBase(id)
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(l.Movies, base, base+ext), nil
+		lib, dirs, name = l.Movies, []string{base}, base
 
 	case ident.KindEpisode:
 		series, err := videoBase(id)
@@ -64,31 +66,50 @@ func (l Layout) Path(id ident.Identity, ext string) (string, error) {
 			return "", err
 		}
 		if id.Season < 0 || id.Episode < 1 {
-			return "", fmt.Errorf("jellyfin: invalid episode S%02dE%02d", id.Season, id.Episode)
+			return "", fmt.Errorf("invalid episode S%02dE%02d", id.Season, id.Episode)
 		}
-		name := fmt.Sprintf("%s - S%02dE%02d", titleYear(id.Title, id.Year), id.Season, id.Episode)
+		name = fmt.Sprintf("%s - S%02dE%02d", titleYear(id.Title, id.Year), id.Season, id.Episode)
 		if t := Sanitize(id.EpisodeTitle); t != "" {
 			name += " - " + t
 		}
-		season := fmt.Sprintf("Season %02d", id.Season)
-		return filepath.Join(l.Shows, series, season, fit(name)+ext), nil
+		lib, dirs = l.Shows, []string{series, fmt.Sprintf("Season %02d", id.Season)}
 
 	case ident.KindTrack:
 		artist, album, title := Sanitize(id.Artist), Sanitize(id.Album), Sanitize(id.TrackTitle)
 		if artist == "" || album == "" || title == "" {
-			return "", errors.New("jellyfin: a track needs an artist, an album, and a title")
+			return "", errors.New("a track needs an artist, an album, and a title")
 		}
-		name := title
+		name = title
 		switch {
 		case id.Track > 0 && (id.DiscTotal > 1 || id.Disc > 1):
 			name = fmt.Sprintf("%d-%02d - %s", max(id.Disc, 1), id.Track, title)
 		case id.Track > 0:
 			name = fmt.Sprintf("%02d - %s", id.Track, title)
 		}
-		return filepath.Join(l.Music, fit(artist), fit(titleYear(album, id.Year)), fit(name)+ext), nil
+		lib, dirs = l.Music, []string{artist, titleYear(album, id.Year)}
+
+	default:
+		return "", fmt.Errorf("unknown kind %q", id.Kind)
 	}
 
-	return "", fmt.Errorf("jellyfin: unknown kind %q", id.Kind)
+	for _, d := range dirs {
+		if len(d) > MaxName {
+			return "", tooLong("a folder name", len(d))
+		}
+	}
+	if n := len(name) + len(ext); n > MaxName {
+		return "", tooLong("the file name", n)
+	}
+	for _, s := range sidecars {
+		if n := len(name) + len(s); n > MaxName {
+			return "", tooLong("the name of its "+s+" file", n)
+		}
+	}
+	return filepath.Join(append(append([]string{lib}, dirs...), name+ext)...), nil
+}
+
+func tooLong(what string, n int) error {
+	return fmt.Errorf("%s would be %d bytes, the limit is %d", what, n, MaxName)
 }
 
 // UnidentifiedPath returns the destination path of an unidentified file
@@ -109,7 +130,7 @@ func SidecarPath(mainDst, suffix string) string {
 func videoBase(id ident.Identity) (string, error) {
 	title := Sanitize(id.Title)
 	if title == "" {
-		return "", errors.New("jellyfin: a movie or series needs a title")
+		return "", errors.New("a movie or series needs a title")
 	}
 	var tag string
 	switch {
@@ -118,7 +139,7 @@ func videoBase(id ident.Identity) (string, error) {
 	case id.IMDbID != "":
 		tag = fmt.Sprintf(" [imdbid-%s]", id.IMDbID)
 	}
-	return cut(titleYear(title, id.Year), maxBase-len(tag)) + tag, nil
+	return titleYear(title, id.Year) + tag, nil
 }
 
 func titleYear(title string, year int) string {
@@ -127,23 +148,6 @@ func titleYear(title string, year int) string {
 		return fmt.Sprintf("%s (%d)", title, year)
 	}
 	return title
-}
-
-// fit cuts s to maxBase bytes without splitting a character.
-func fit(s string) string {
-	return cut(s, maxBase)
-}
-
-// cut cuts s to n bytes without splitting a character.
-func cut(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	s = s[:n]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return strings.TrimRight(s, ". ")
 }
 
 // Sanitize makes s safe as a path component. It uses the "smart"
@@ -173,5 +177,5 @@ func Sanitize(s string) string {
 	}
 
 	out := strings.Join(strings.Fields(b.String()), " ")
-	return strings.Trim(fit(out), ". ")
+	return strings.Trim(out, ". ")
 }
