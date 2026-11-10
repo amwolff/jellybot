@@ -1,5 +1,6 @@
 // Package ident identifies media files with deterministic methods: file
-// hashes, exact file sizes, embedded tags, and audio fingerprints.
+// hashes, exact file sizes, embedded tags, and audio fingerprints. A file or
+// directory name of the form "<provider>:<ID>" goes before these methods.
 package ident
 
 // Kind is the kind of an identified file.
@@ -19,6 +20,8 @@ const (
 	SourceTags          = "tags"
 	SourceAcoustID      = "acoustid"
 	SourceUser          = "user"
+	// SourceName is a file or directory name of the form "<provider>:<ID>".
+	SourceName = "name"
 )
 
 // Identity is what a file is, with the names that its destination path

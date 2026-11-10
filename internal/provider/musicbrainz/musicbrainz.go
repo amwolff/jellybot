@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/amwolff/jellybot/internal/provider"
 )
@@ -25,17 +26,22 @@ type Track struct {
 	Number   string
 	Position int
 	Title    string
+	// RecordingID and Length are set only in the result of Release. A zero
+	// Length means that MusicBrainz does not know it.
+	RecordingID string
+	Length      time.Duration
 }
 
 // Medium is a medium (for example, a disc) of a release.
 type Medium struct {
 	Position   int
 	TrackCount int
-	// Tracks holds only the tracks of the looked-up recording.
+	// Tracks holds all tracks in the result of Release, and only the tracks
+	// of the looked-up recording in the result of Recording.
 	Tracks []Track
 }
 
-// Release is a release that contains a recording.
+// Release is a MusicBrainz release.
 type Release struct {
 	ID             string
 	Title          string
@@ -161,7 +167,7 @@ func (c *Client) Recording(ctx context.Context, id string) (Recording, bool, err
 	return rec, true, nil
 }
 
-type releaseResponse struct {
+type mediaCountResponse struct {
 	Media []struct {
 		Position int `json:"position"`
 	} `json:"media"`
@@ -170,10 +176,57 @@ type releaseResponse struct {
 // MediumCount returns the number of media (discs) of the release with MBID
 // id.
 func (c *Client) MediumCount(ctx context.Context, id string) (int, error) {
-	var rr releaseResponse
+	var rr mediaCountResponse
 	ok, err := c.get(ctx, "release:"+id, "/release/"+url.PathEscape(id), "media", &rr)
 	if err != nil || !ok {
 		return 0, err
 	}
 	return len(rr.Media), nil
+}
+
+type releaseResponse struct {
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Status       string       `json:"status"`
+	Date         string       `json:"date"`
+	ArtistCredit artistCredit `json:"artist-credit"`
+	Media        []struct {
+		Position   int `json:"position"`
+		TrackCount int `json:"track-count"`
+		Tracks     []struct {
+			Number    string `json:"number"`
+			Position  int    `json:"position"`
+			Title     string `json:"title"`
+			Length    int64  `json:"length"`
+			Recording struct {
+				ID string `json:"id"`
+			} `json:"recording"`
+		} `json:"tracks"`
+	} `json:"media"`
+}
+
+// Release returns the release with MBID id and all its tracks. PrimaryType
+// and SecondaryTypes stay empty.
+func (c *Client) Release(ctx context.Context, id string) (Release, bool, error) {
+	var rr releaseResponse
+	ok, err := c.get(ctx, "release-tracks:"+id, "/release/"+url.PathEscape(id), "recordings artist-credits", &rr)
+	if err != nil || !ok {
+		return Release{}, ok, err
+	}
+
+	rel := Release{ID: rr.ID, Title: rr.Title, Status: rr.Status, Date: rr.Date, Artist: rr.ArtistCredit.String()}
+	for _, m := range rr.Media {
+		med := Medium{Position: m.Position, TrackCount: m.TrackCount}
+		for _, t := range m.Tracks {
+			med.Tracks = append(med.Tracks, Track{
+				Number:      t.Number,
+				Position:    t.Position,
+				Title:       t.Title,
+				RecordingID: t.Recording.ID,
+				Length:      time.Duration(t.Length) * time.Millisecond,
+			})
+		}
+		rel.Media = append(rel.Media, med)
+	}
+	return rel, true, nil
 }

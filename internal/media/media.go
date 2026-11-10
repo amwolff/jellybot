@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.senan.xyz/taglib"
 )
@@ -125,6 +126,16 @@ func ReadTags(path string) (Tags, error) {
 	}
 	t.DiscTotal = total
 	return t, nil
+}
+
+// Duration returns the length of the audio file at path. It is zero if
+// TagLib cannot tell the length.
+func Duration(path string) (time.Duration, error) {
+	p, err := taglib.ReadProperties(path)
+	if err != nil {
+		return 0, fmt.Errorf("media: read properties: %w", err)
+	}
+	return p.Length, nil
 }
 
 // numberOf parses "3" or "3/12".

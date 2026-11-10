@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"go.senan.xyz/taglib"
 )
@@ -127,6 +128,14 @@ func TestReadTags(t *testing.T) {
 	}
 	if !got.Complete() {
 		t.Fatal("Complete = false")
+	}
+}
+
+func TestDuration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.wav")
+	writeWAV(t, path)
+	if d, err := Duration(path); err != nil || d != time.Second {
+		t.Fatalf("Duration = %v, %v", d, err)
 	}
 }
 

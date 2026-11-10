@@ -94,6 +94,30 @@ AcoustID gives each match a score from 0 to 1. jellybot accepts a score of 0.9 o
 
 **Sidecars:** subtitles (`.srt`, `.ass`, …) and lyrics (`.lrc`) go with their main file and keep their suffix, for example `.en.forced.srt`.
 
+## Naming a file yourself
+
+If jellybot cannot identify a file but you know what it is, give the file the name `<provider>:<ID>` and keep the extension. This name goes before all other methods. jellybot gets the titles from the provider.
+
+| Name | Meaning |
+|---|---|
+| `tmdb:603.mkv` | The movie with the TMDB ID 603. |
+| `tmdb:1396:s01e02.mkv` | Season 1, episode 2 of the series with the TMDB ID 1396. |
+| `imdb:tt0133093.mkv` | The movie or the episode with this IMDb ID. |
+| `imdb:tt0903747:s01e02.mkv` | Season 1, episode 2 of the series with this IMDb ID. |
+| `musicbrainz:<recording MBID>.flac` | The MusicBrainz recording. |
+
+The IDs are in the page addresses of the providers, for example `themoviedb.org/movie/603`, `imdb.com/title/tt0133093`, and `musicbrainz.org/recording/<MBID>`.
+
+If the name is not valid, or the provider does not have the ID, the file stays unmatched and its row tells why. Sidecars go with the file as usual: `tmdb:603.en.srt` goes with `tmdb:603.mkv`.
+
+**Albums:** give a directory the name `musicbrainz:<release MBID>`. The audio files in it and in its subdirectories (`CD1` and `CD2`, for example) then get the tracks of that release:
+
+- The files take the tracks in the natural order of their names (`2` is before `10`). The directory must have as many audio files as the release has tracks.
+- The length of a file must be within 10 seconds of the length of its track. If it is not, the file stays unmatched and its row tells why.
+- A file in the directory with the name `musicbrainz:<recording MBID>` takes the track of that recording. The other files take the other tracks in order. Use this when the order of the names is not the order of the tracks.
+
+jellybot records the identity for the contents of the file. Thus, the file keeps the identity when it has another name. The exception is an audio file with complete tags: without the name, the tags go first.
+
 ## Safety
 
 - The destination file is byte-identical to the source. A copy goes to a temporary file. jellybot then reads the copy again and compares SHA-256 hashes before it renames the copy into place.

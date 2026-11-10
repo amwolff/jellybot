@@ -342,12 +342,19 @@ func TestVideoNoOpenSubtitlesKey(t *testing.T) {
 // writeWAV writes ten seconds of silent 8 kHz mono PCM.
 func writeWAV(t *testing.T, path string) File {
 	t.Helper()
+	return writeWAVOf(t, path, 10, 0)
+}
+
+// writeWAVOf writes 8 kHz mono PCM of the given length. The samples depend
+// on seed, so that files of the same length have different hashes.
+func writeWAVOf(t *testing.T, path string, seconds int, seed byte) File {
+	t.Helper()
 	const rate = 8000
-	const size = 10 * rate * 2
-	data := make([]byte, size)
+	size := seconds * rate * 2
+	data := bytes.Repeat([]byte{seed}, size)
 	var b []byte
 	b = append(b, "RIFF"...)
-	b = binary.LittleEndian.AppendUint32(b, 36+size)
+	b = binary.LittleEndian.AppendUint32(b, uint32(36+size)) //nolint:gosec // a small test file
 	b = append(b, "WAVEfmt "...)
 	b = binary.LittleEndian.AppendUint32(b, 16)
 	b = binary.LittleEndian.AppendUint16(b, 1)
@@ -357,8 +364,11 @@ func writeWAV(t *testing.T, path string) File {
 	b = binary.LittleEndian.AppendUint16(b, 2)
 	b = binary.LittleEndian.AppendUint16(b, 16)
 	b = append(b, "data"...)
-	b = binary.LittleEndian.AppendUint32(b, size)
+	b = binary.LittleEndian.AppendUint32(b, uint32(size)) //nolint:gosec // a small test file
 	b = append(b, data...)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/amwolff/jellybot/internal/provider"
 	"github.com/amwolff/jellybot/internal/provider/providertest"
@@ -30,6 +32,17 @@ func TestRecording(t *testing.T) {
 			_, _ = w.Write(recording)
 		case "/release/6b94230e-938a-4e4d-9e4e-c0d9d00365c8":
 			_, _ = w.Write([]byte(`{"id":"6b94230e-938a-4e4d-9e4e-c0d9d00365c8","media":[{"position":1},{"position":2}]}`))
+		case "/release/b84ee12a-09ef-421b-82de-0441a926375b":
+			if got := r.URL.Query().Get("inc"); got != "recordings artist-credits" {
+				_, _ = w.Write([]byte(`{"media":[{"position":1}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"b84ee12a-09ef-421b-82de-0441a926375b","title":"The Dark Side of the Moon","status":"Official",
+				"date":"1973-03-24","artist-credit":[{"name":"Pink Floyd","joinphrase":""}],
+				"media":[{"position":1,"track-count":2,"tracks":[
+				 {"id":"d4156411-b884-368f-a4cb-7c0101a557a2","number":"A1","position":1,"title":"Speak to Me","length":68346,
+				  "recording":{"id":"bef3fddb-5aca-49f5-b2fd-d56a23268d63","title":"Speak to Me","length":68346}},
+				 {"id":"t2","number":"A2","position":2,"title":"Breathe","length":null,"recording":{"id":"r2"}}]}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":"Not Found"}`))
@@ -61,7 +74,30 @@ func TestRecording(t *testing.T) {
 		t.Fatalf("MediumCount = %d, %v", n, err)
 	}
 
+	// The cached response of MediumCount has no tracks, so Release must not
+	// use it.
+	if n, err = c.MediumCount(ctx, "b84ee12a-09ef-421b-82de-0441a926375b"); err != nil || n != 1 {
+		t.Fatalf("MediumCount = %d, %v", n, err)
+	}
+	full, ok, err := c.Release(ctx, "b84ee12a-09ef-421b-82de-0441a926375b")
+	if err != nil || !ok {
+		t.Fatalf("Release = %v, %v", ok, err)
+	}
+	if full.Title != "The Dark Side of the Moon" || full.Artist != "Pink Floyd" || full.Date != "1973-03-24" || len(full.Media) != 1 {
+		t.Fatalf("Release = %+v", full)
+	}
+	want := []Track{
+		{Number: "A1", Position: 1, Title: "Speak to Me", RecordingID: "bef3fddb-5aca-49f5-b2fd-d56a23268d63", Length: 68346 * time.Millisecond},
+		{Number: "A2", Position: 2, Title: "Breathe", RecordingID: "r2"},
+	}
+	if !slices.Equal(full.Media[0].Tracks, want) {
+		t.Fatalf("Tracks = %+v, want %+v", full.Media[0].Tracks, want)
+	}
+
 	if _, ok, err := c.Recording(ctx, "nope"); err != nil || ok {
 		t.Fatalf("Recording(unknown) = %v, %v", ok, err)
+	}
+	if _, ok, err := c.Release(ctx, "nope"); err != nil || ok {
+		t.Fatalf("Release(unknown) = %v, %v", ok, err)
 	}
 }

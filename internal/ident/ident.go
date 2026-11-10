@@ -188,15 +188,26 @@ func (x *Identifier) video(ctx context.Context, f File, progress func(string)) (
 		return Result{Reason: "no TMDB key (TMDB gives the names of videos)"}, nil
 	}
 
+	var res Result
 	progress(StageHashing)
 	st, err := x.stat(f)
-	if errors.Is(err, oshash.ErrTooSmall) {
-		return Result{Reason: "file is smaller than 128 KiB"}, nil
-	}
-	if err != nil {
+	switch {
+	case err == nil:
+		res.Key, res.HasKey = store.IdentKey{Size: st.Size, OSHash: st.OSHash}, true
+	case !errors.Is(err, oshash.ErrTooSmall):
 		return Result{}, err
 	}
-	res := Result{Key: store.IdentKey{Size: st.Size, OSHash: st.OSHash}, HasKey: true}
+
+	// An override in the name goes before all other methods.
+	if o, ok, err := parseOverride(stem(f.Path)); ok {
+		if err != nil {
+			return Result{Reason: "the file name is " + err.Error()}, nil
+		}
+		return x.videoOverride(ctx, o, res, progress)
+	}
+	if !res.HasKey {
+		return Result{Reason: "file is smaller than 128 KiB"}, nil
+	}
 
 	if !store.IsRefresh(ctx) {
 		rec, ok, err := x.Store.Ident(res.Key)
@@ -465,6 +476,10 @@ func (x *Identifier) resolveVideo(ctx context.Context, id Identity) (Identity, s
 }
 
 func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (Result, error) {
+	if res, ok, err := x.audioOverride(ctx, f, progress); ok || err != nil {
+		return res, err
+	}
+
 	progress(StageTags)
 	tags, err := media.ReadTags(f.Path)
 	if err != nil {
@@ -487,13 +502,6 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 		}}, nil
 	}
 
-	if x.FPCalc == "" {
-		return Result{Reason: "incomplete tags; install fpcalc for fingerprints"}, nil
-	}
-	if x.AcoustID == nil {
-		return Result{Reason: "incomplete tags; no AcoustID key"}, nil
-	}
-
 	var res Result
 	progress(StageHashing)
 	st, err := x.stat(f)
@@ -510,11 +518,19 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 		if ierr != nil {
 			return Result{}, ierr
 		}
-		if ok && rec.MBRecording != "" && rec.Score >= minScore {
+		if ok && rec.MBRecording != "" && (rec.Source == SourceName || rec.Score >= minScore) {
 			progress(StageMusicBrainz)
-			id, reason, rerr := x.resolveTrack(ctx, rec.MBRecording, rec.MBRelease, tags.Album)
-			if rerr != nil {
-				return Result{}, rerr
+			var id Identity
+			var reason string
+			if rec.Source == SourceName {
+				// The recording lookup does not list all releases, and the
+				// user can name any release.
+				id, reason, err = x.releaseTrack(ctx, rec.MBRelease, rec.MBRecording)
+			} else {
+				id, reason, err = x.resolveTrack(ctx, rec.MBRecording, rec.MBRelease, tags.Album)
+			}
+			if err != nil {
+				return Result{}, err
 			}
 			if reason == "" {
 				id.Source = rec.Source
@@ -523,6 +539,15 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 				return res, nil
 			}
 		}
+	}
+
+	if x.FPCalc == "" {
+		res.Reason = "incomplete tags; install fpcalc for fingerprints"
+		return res, nil
+	}
+	if x.AcoustID == nil {
+		res.Reason = "incomplete tags; no AcoustID key"
+		return res, nil
 	}
 
 	progress(StageFingerprint)
