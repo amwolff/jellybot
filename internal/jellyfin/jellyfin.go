@@ -22,6 +22,9 @@ type Layout struct {
 	Shows        string
 	Music        string
 	Unidentified string
+	// FlatUnidentified puts unidentified files directly in Unidentified,
+	// without their directories under the source root.
+	FlatUnidentified bool
 }
 
 // DefaultLayout is the layout without flag overrides.
@@ -115,6 +118,9 @@ func tooLong(what string, n int) error {
 // UnidentifiedPath returns the destination path of an unidentified file
 // that is at rel relative to the source root. The original name stays.
 func (l Layout) UnidentifiedPath(rel string) string {
+	if l.FlatUnidentified {
+		rel = filepath.Base(rel)
+	}
 	return filepath.Join(l.Unidentified, rel)
 }
 

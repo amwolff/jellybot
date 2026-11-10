@@ -283,6 +283,60 @@ func TestPlanDisk(t *testing.T) {
 	}
 }
 
+func TestPlanFlatUnidentified(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	a, b := filepath.Join("a", "clip.mp4"), filepath.Join("b", "clip.mp4")
+	sidecar := filepath.Join("a", "clip.en.srt")
+	for _, rel := range []string{a, b, sidecar, "taken.mp4"} {
+		write(t, src, rel, 10)
+	}
+	write(t, dst, filepath.Join("Unidentified", "taken.mp4"), 20)
+
+	p := newPlan(t, src, dst,
+		Row{Rel: a, Size: 10, Sidecars: []Sidecar{{Rel: sidecar, Suffix: ".en.srt", Size: 10}}},
+		Row{Rel: b, Size: 10},
+		Row{Rel: "taken.mp4", Size: 10},
+	)
+	p.Layout.FlatUnidentified = true
+	for _, r := range p.Rows {
+		p.Handle(Identified{Gen: 1, Rel: r.Rel, Result: ident.Result{Reason: "no match"}})
+		r.Unidentified = true
+	}
+	p.Recompute()
+
+	// Two files with the same name, and a different file on disk.
+	for _, r := range p.Rows {
+		if r.Status != StatusConflict {
+			t.Fatalf("%s = %v %q", r.Rel, r.Status, r.Dest)
+		}
+	}
+	if len(p.Ops()) != 0 {
+		t.Fatalf("Ops = %+v", p.Ops())
+	}
+
+	p.Row(b).Skip = true
+	p.Recompute()
+	var got []string
+	for _, op := range p.Ops() {
+		rel, _ := filepath.Rel(dst, op.Dst)
+		got = append(got, rel)
+	}
+	want := []string{filepath.Join("Unidentified", "clip.mp4"), filepath.Join("Unidentified", "clip.en.srt")}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Ops = %q, want %q", got, want)
+	}
+
+	// With the directories, only the file on disk is in the way.
+	p.Row(b).Skip = false
+	p.Layout.FlatUnidentified = false
+	p.Recompute()
+	for _, rel := range []string{a, b} {
+		if r := p.Row(rel); r.Status != StatusReady || r.Dest != filepath.Join("Unidentified", rel) {
+			t.Fatalf("%s = %v %q", rel, r.Status, r.Dest)
+		}
+	}
+}
+
 func TestPlanInPlace(t *testing.T) {
 	root := t.TempDir()
 	rel := filepath.FromSlash("Movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999) [tmdbid-603].mkv")

@@ -91,6 +91,7 @@ func (c *config) setup(params clingy.Parameters) {
 	c.layout.Shows = params.Flag("shows-dir", "show library directory under the destination", jellyfin.DefaultLayout.Shows, clingy.Advanced).(string)
 	c.layout.Music = params.Flag("music-dir", "music library directory under the destination", jellyfin.DefaultLayout.Music, clingy.Advanced).(string)
 	c.layout.Unidentified = params.Flag("unidentified-dir", "directory under the destination for unidentified files", jellyfin.DefaultLayout.Unidentified, clingy.Advanced).(string)
+	c.layout.FlatUnidentified = boolFlag(params, "unidentified-flat", "put unidentified files directly in the unidentified directory, without their subdirectories", clingy.Advanced)
 
 	c.src = params.Arg("source", "directory with the files to organize").(string)
 	c.dst = params.Arg("destination", "root directory of the Jellyfin libraries").(string)

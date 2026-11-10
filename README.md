@@ -32,7 +32,7 @@ jellybot plan SOURCE DESTINATION   # dry run: print the plan, change nothing
 | `Music/` | Music |
 | `Unidentified/` | Home Videos and Photos (Jellyfin does no lookups there) |
 
-Unmatched files stay in `SOURCE`. To send one to `Unidentified/`, press `u` on its row.
+Unmatched files stay in `SOURCE`. To send one to `Unidentified/`, press `u` on its row. The file keeps its name and its path below `SOURCE`. With `--unidentified-flat`, it keeps only its name.
 
 ### Flags
 
@@ -52,6 +52,7 @@ Each flag also reads an environment variable: `--tmdb-api-key` reads `JELLYBOT_T
 | `--acoustid-api-key` | | AcoustID application key. |
 | `--acoustid-min-score` | 0.9 | Lowest AcoustID score to accept, above 0 and at most 1. |
 | `--movies-dir`, `--shows-dir`, `--music-dir`, `--unidentified-dir` | `Movies`, … | Subdirectory names. |
+| `--unidentified-flat` | off | Put unidentified files directly in `Unidentified/`, without their subdirectories. Two files with the same name then show a conflict. |
 
 The overrides apply to the files that jellybot copies or moves, their sidecars, and the directories that jellybot creates. jellybot does not change directories that exist.
 

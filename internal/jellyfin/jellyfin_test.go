@@ -193,6 +193,11 @@ func TestUnidentifiedAndSidecar(t *testing.T) {
 	if want := filepath.Join("Unidentified", "sub", "the other movie with Mace Windu.mkv"); got != want {
 		t.Fatalf("UnidentifiedPath = %q, want %q", got, want)
 	}
+	flat := DefaultLayout
+	flat.FlatUnidentified = true
+	if got, want := flat.UnidentifiedPath(rel), filepath.Join("Unidentified", "the other movie with Mace Windu.mkv"); got != want {
+		t.Fatalf("flat UnidentifiedPath = %q, want %q", got, want)
+	}
 
 	main := filepath.FromSlash("Movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999) [tmdbid-603].mkv")
 	if got, want := SidecarPath(main, ".en.forced.srt"), filepath.FromSlash("Movies/The Matrix (1999) [tmdbid-603]/The Matrix (1999) [tmdbid-603].en.forced.srt"); got != want {
