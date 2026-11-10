@@ -407,16 +407,23 @@ func TestAudioUntagged(t *testing.T) {
 	}
 }
 
+// fakeFPCalc writes a script that stands in for fpcalc and returns its path.
+func fakeFPCalc(t *testing.T, dir string, seconds int, fingerprint string) string {
+	t.Helper()
+	path := filepath.Join(dir, "fpcalc")
+	script := fmt.Sprintf("#!/bin/sh\necho '{\"duration\": %d.0, \"fingerprint\": %q}'\n", seconds, fingerprint)
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // an executable test script
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestAudioAcoustID(t *testing.T) {
 	x, api := setup(t)
 	dir := t.TempDir()
 	f := writeWAV(t, filepath.Join(dir, "mystery.wav"))
 
-	fake := filepath.Join(dir, "fpcalc")
-	script := "#!/bin/sh\necho '{\"duration\": 10.0, \"fingerprint\": \"AQAAmystery\"}'\n"
-	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil { //nolint:gosec // an executable test script
-		t.Fatal(err)
-	}
+	fake := fakeFPCalc(t, dir, 10, "AQAAmystery")
 	x.FPCalc = fake
 
 	api.routes["/acoustid/lookup?AQAAmystery"] = `{"status":"ok","results":[{"id":"a","score":0.95,"recordings":[{"id":"rec-1"}]}]}`
@@ -453,6 +460,78 @@ func TestAudioAcoustID(t *testing.T) {
 	}
 	if api.count("/acoustid/") != before {
 		t.Fatal("AcoustID was called again")
+	}
+}
+
+func TestAudioAcoustIDUnmatched(t *testing.T) {
+	x, api := setup(t)
+	dir := t.TempDir()
+	f := writeWAV(t, filepath.Join(dir, "mystery.wav"))
+
+	const rec = `,"recordings":[{"id":"rec-1"}]}`
+	tests := []struct {
+		name     string
+		seconds  int
+		results  string
+		minScore float64
+		want     string
+	}{
+		{"unknown", 200, ``, 0, "AcoustID: no match"},
+		{"too short", 4, ``, 0, "AcoustID: no match (the track is too short for AcoustID)"},
+		{"no recording", 200, `{"id":"a","score":0.98}`, 0, "AcoustID: the match has no MusicBrainz recording"},
+		{"below the default", 200, `{"id":"a","score":0.899` + rec, 0, "AcoustID: the best match is 89%, the minimum is 90%"},
+		{"below the minimum", 200, `{"id":"a","score":0.95` + rec, 0.975, "AcoustID: the best match is 95%, the minimum is 97.5%"},
+		{"only a weak match has a recording", 200, `{"id":"a","score":0.98},{"id":"b","score":0.6` + rec, 0, "AcoustID: the best match is 60%, the minimum is 90%"},
+	}
+	for i, tt := range tests {
+		fp := fmt.Sprintf("AQAAcase%d", i)
+		x.FPCalc = fakeFPCalc(t, dir, tt.seconds, fp)
+		x.MinAcoustIDScore = tt.minScore
+		api.routes["/acoustid/lookup?"+fp] = `{"status":"ok","results":[` + tt.results + `]}`
+
+		res, err := x.Identify(context.Background(), f, nil)
+		if err != nil || res.Identity != nil || res.Reason != tt.want {
+			t.Errorf("%s: Identify = %+v, %v; want the reason %q", tt.name, res, err, tt.want)
+		}
+	}
+}
+
+func TestAudioAcoustIDMinScore(t *testing.T) {
+	x, api := setup(t)
+	dir := t.TempDir()
+	f := writeWAV(t, filepath.Join(dir, "mystery.wav"))
+	x.FPCalc = fakeFPCalc(t, dir, 200, "AQAAlow")
+
+	api.routes["/acoustid/lookup?AQAAlow"] = `{"status":"ok","results":[{"id":"a","score":0.8,"recordings":[{"id":"rec-1"}]}]}`
+	api.routes["/mb/recording/rec-1"] = `{"id":"rec-1","title":"T","artist-credit":[{"name":"A","joinphrase":""}],
+		"releases":[{"id":"rel-1","title":"B","status":"Official","date":"2001","artist-credit":[{"name":"A","joinphrase":""}],
+		 "release-group":{"primary-type":"Album","secondary-types":[]},
+		 "media":[{"position":1,"track-count":1,"tracks":[{"number":"1","position":1,"title":"T"}]}]}]}`
+	api.routes["/mb/release/rel-1"] = `{"media":[{"position":1}]}`
+
+	identify := func(minScore float64) Result {
+		t.Helper()
+		x.MinAcoustIDScore = minScore
+		res, err := x.Identify(context.Background(), f, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	if identify(0).Identity != nil {
+		t.Fatal("the default minimum accepted a score of 0.8")
+	}
+	res := identify(0.8)
+	if res.Identity == nil {
+		t.Fatalf("a minimum of 0.8 refused a score of 0.8: %q", res.Reason)
+	}
+	// The identity is now on record, with its score.
+	if identify(0).Identity != nil {
+		t.Fatal("the default minimum accepted a record with a score of 0.8")
+	}
+	if id := identify(0.7).Identity; id == nil || !strings.HasPrefix(id.Detail, "recorded identity") {
+		t.Fatalf("a minimum of 0.7 did not use the record: %+v", id)
 	}
 }
 

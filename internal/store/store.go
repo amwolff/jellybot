@@ -176,6 +176,7 @@ type IdentRecord struct {
 	Episode     int       `json:"episode,omitempty"`
 	MBRecording string    `json:"mbRecording,omitempty"`
 	MBRelease   string    `json:"mbRelease,omitempty"`
+	Score       float64   `json:"score,omitempty"` // of an AcoustID match
 	Source      string    `json:"source"`
 	ChosenAt    time.Time `json:"chosenAt"`
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,7 @@ type config struct {
 	tmdbKey     string
 	osKey       string
 	acoustidKey string
+	minScore    float64
 	layout      jellyfin.Layout
 }
 
@@ -51,6 +53,17 @@ func named[T any](name string, parse func(string) (T, error)) func(string) (T, e
 		}
 		return v, err
 	}
+}
+
+func parseScore(s string) (float64, error) {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(v) || v <= 0 || v > 1 {
+		return 0, errors.New("the score must be above 0 and at most 1")
+	}
+	return v, nil
 }
 
 func boolFlag(params clingy.Parameters, name, desc string, opts ...clingy.Option) bool {
@@ -72,6 +85,8 @@ func (c *config) setup(params clingy.Parameters) {
 	c.tmdbKey = params.Flag("tmdb-api-key", "TMDB API key or API read access token (needed for videos)", "").(string)
 	c.osKey = params.Flag("opensubtitles-api-key", "OpenSubtitles API key", "").(string)
 	c.acoustidKey = params.Flag("acoustid-api-key", "AcoustID application API key", "").(string)
+	c.minScore = params.Flag("acoustid-min-score", "lowest AcoustID score to accept, above 0 and at most 1", ident.DefaultMinAcoustIDScore,
+		clingy.Type("score"), clingy.Transform(named("acoustid-min-score", parseScore))).(float64)
 	c.layout.Movies = params.Flag("movies-dir", "movie library directory under the destination", jellyfin.DefaultLayout.Movies, clingy.Advanced).(string)
 	c.layout.Shows = params.Flag("shows-dir", "show library directory under the destination", jellyfin.DefaultLayout.Shows, clingy.Advanced).(string)
 	c.layout.Music = params.Flag("music-dir", "music library directory under the destination", jellyfin.DefaultLayout.Music, clingy.Advanced).(string)
@@ -127,6 +142,8 @@ func (c *config) open(log *slog.Logger) (*app, error) {
 		SRRDB:       srrdb.New(provider.New(s, srrdb.RequestsPerSecond, log)),
 		MusicBrainz: musicbrainz.New(provider.New(s, musicbrainz.RequestsPerSecond, log)),
 		Log:         log,
+
+		MinAcoustIDScore: c.minScore,
 	}
 	status := map[string]string{"srrDB": "✓", "MusicBrainz": "✓"}
 	if c.osKey != "" {

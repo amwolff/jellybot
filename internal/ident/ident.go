@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -25,9 +26,14 @@ import (
 	"github.com/amwolff/jellybot/internal/store"
 )
 
+// DefaultMinAcoustIDScore is the score at which AcoustID itself takes two
+// fingerprints to be the same.
+const DefaultMinAcoustIDScore = 0.9
+
 const (
-	// minAcoustIDScore is the lowest AcoustID score that jellybot accepts.
-	minAcoustIDScore = 0.9
+	// minAcoustIDSeconds is the shortest audio that AcoustID can know. It
+	// indexes no fingerprint with fewer than 80 items, which is 12.5 seconds.
+	minAcoustIDSeconds = 13
 	// maxSRRResults is the most srrDB results for one size that jellybot
 	// examines. More results mean that the size is too common to be
 	// useful (small files, for example).
@@ -78,6 +84,8 @@ type Identifier struct {
 	TMDB          *tmdb.Client
 	AcoustID      *acoustid.Client
 	MusicBrainz   *musicbrainz.Client
+	// A zero MinAcoustIDScore means DefaultMinAcoustIDScore.
+	MinAcoustIDScore float64
 	// FPCalc is the path of the fpcalc binary, or empty.
 	FPCalc string
 	Log    *slog.Logger
@@ -496,12 +504,13 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 		return Result{}, err
 	}
 
+	minScore := cmp.Or(x.MinAcoustIDScore, DefaultMinAcoustIDScore)
 	if res.HasKey && !store.IsRefresh(ctx) {
 		rec, ok, ierr := x.Store.Ident(res.Key)
 		if ierr != nil {
 			return Result{}, ierr
 		}
-		if ok && rec.MBRecording != "" {
+		if ok && rec.MBRecording != "" && rec.Score >= minScore {
 			progress(StageMusicBrainz)
 			id, reason, rerr := x.resolveTrack(ctx, rec.MBRecording, rec.MBRelease, tags.Album)
 			if rerr != nil {
@@ -527,15 +536,27 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 	if err != nil {
 		return Result{}, err
 	}
+	// The results are in score order: the first with a recording is the best.
 	var best *acoustid.Result
-	for i, r := range results {
-		if r.Score >= minAcoustIDScore && len(r.Recordings) > 0 {
+	for i := range results {
+		if len(results[i].Recordings) > 0 {
 			best = &results[i]
 			break
 		}
 	}
-	if best == nil {
+	switch {
+	case len(results) == 0 && duration < minAcoustIDSeconds:
+		res.Reason = "AcoustID: no match (the track is too short for AcoustID)"
+	case len(results) == 0:
 		res.Reason = "AcoustID: no match"
+	case best == nil:
+		res.Reason = "AcoustID: the match has no MusicBrainz recording"
+	case best.Score < minScore:
+		// Round the score down, so that it does not show as the minimum.
+		res.Reason = fmt.Sprintf("AcoustID: the best match is %.0f%%, the minimum is %.4g%%",
+			math.Floor(best.Score*100+1e-9), minScore*100)
+	}
+	if res.Reason != "" {
 		return res, nil
 	}
 
@@ -554,7 +575,9 @@ func (x *Identifier) audio(ctx context.Context, f File, progress func(string)) (
 		id.Detail = fmt.Sprintf("AcoustID %.0f%% → MusicBrainz %s", best.Score*100, recID)
 		res.Identity = &id
 		if res.HasKey {
-			return res, x.Store.PutIdent(res.Key, record(id, SourceAcoustID))
+			rec := record(id, SourceAcoustID)
+			rec.Score = best.Score
+			return res, x.Store.PutIdent(res.Key, rec)
 		}
 		return res, nil
 	}

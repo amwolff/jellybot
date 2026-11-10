@@ -50,6 +50,7 @@ Each flag also reads an environment variable: `--tmdb-api-key` reads `JELLYBOT_T
 | `--tmdb-api-key` | | TMDB key or read access token. Needed for videos. |
 | `--opensubtitles-api-key` | | OpenSubtitles key. |
 | `--acoustid-api-key` | | AcoustID application key. |
+| `--acoustid-min-score` | 0.9 | Lowest AcoustID score to accept, above 0 and at most 1. |
 | `--movies-dir`, `--shows-dir`, `--music-dir`, `--unidentified-dir` | `Movies`, … | Subdirectory names. |
 
 The overrides apply to the files that jellybot copies or moves, their sidecars, and the directories that jellybot creates. jellybot does not change directories that exist.
@@ -88,6 +89,8 @@ srrDB and MusicBrainz do not need keys.
 **Audio:**
 1. Embedded tags (artist, album, and title) give the path directly.
 2. Without tags, `fpcalc` makes a fingerprint, AcoustID finds the recording, and MusicBrainz gives the release.
+
+AcoustID gives each match a score from 0 to 1. jellybot accepts a score of 0.9 or more; `--acoustid-min-score` changes this. AcoustID does not know tracks shorter than about 13 seconds (a short intro, for example), so jellybot cannot match these by fingerprint.
 
 **Sidecars:** subtitles (`.srt`, `.ass`, …) and lyrics (`.lrc`) go with their main file and keep their suffix, for example `.en.forced.srt`.
 
