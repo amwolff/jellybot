@@ -355,6 +355,36 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
+func TestPortion(t *testing.T) {
+	const size = 50 << 30
+	tests := []struct {
+		size, done, total, want int64
+	}{
+		{size, 0, 2 * size, 0},
+		{size, size, 2 * size, size / 2},
+		{size, 2 * size, 2 * size, size},
+		{size, 3 * size, 2 * size, size},
+		{size, size, size, size},
+		{10, 5, 0, 0},
+		{0, 0, 0, 0},
+	}
+	for _, tt := range tests {
+		if got := portion(tt.size, tt.done, tt.total); got != tt.want {
+			t.Errorf("portion(%d, %d, %d) = %d, want %d", tt.size, tt.done, tt.total, got, tt.want)
+		}
+	}
+
+	// The portion never goes back while a file of 50 GiB is copied.
+	var last int64
+	for done := int64(0); done <= 2*size; done += 1 << 20 {
+		got := portion(size, done, 2*size)
+		if got < last || got > size {
+			t.Fatalf("portion at %d = %d, after %d", done, got, last)
+		}
+		last = got
+	}
+}
+
 func TestRun(t *testing.T) {
 	src, dst := t.TempDir(), t.TempDir()
 	write(t, src, "matrix.mkv", 200_000)

@@ -38,11 +38,7 @@ func Run(ctx context.Context, a *fsop.Applier, s *store.Store, ops []Op, progres
 	report := func(cur Op, done, opTotal int64) {
 		if now := time.Now(); now.Sub(last) >= 100*time.Millisecond || done == opTotal {
 			last = now
-			n := base
-			if opTotal > 0 {
-				n += cur.Size * done / opTotal
-			}
-			progress(ApplyProgress{Done: n, Total: total, Current: cur.Src})
+			progress(ApplyProgress{Done: base + portion(cur.Size, done, opTotal), Total: total, Current: cur.Src})
 		}
 	}
 
@@ -71,6 +67,15 @@ func Run(ctx context.Context, a *fsop.Applier, s *store.Store, ops []Op, progres
 		base += op.Size
 		done(OpDone{Rel: op.Rel, Sidecar: op.Sidecar, Err: err})
 	}
+}
+
+// portion returns size*done/total. It does not calculate the product, which
+// is too large for an int64 when a file is larger than 2 GiB.
+func portion(size, done, total int64) int64 {
+	if total <= 0 {
+		return 0
+	}
+	return int64(float64(size) * (float64(min(done, total)) / float64(total)))
 }
 
 // recordApplied copies the hash memo of src to dst, so that the next scan of
